@@ -1,5 +1,6 @@
 # This function obtains the coefficients (interaction strenghts) for each 
 # pre-defined causal variable with respective lag.
+# The series to be analyzed are manually cut and named in the beginning, the rest just needs to use the same column names.
 CCMCoefficients <- function(DataFile='../data/DataMalariaTartagalCCM.csv') {
   series<-read.csv(DataFile)
   series_cut<-matrix(NA,602,6)

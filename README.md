@@ -6,5 +6,5 @@ Code and data for the paper "Causal climatic factors of malaria at the southern 
 We fit an inhomogeneous zero-inflated Poisson dynamics in discrete time to the number of cases recorded. See the [full explanation](count_models/poisson_models_tartagal.md), along with the code.
 
 ## CCM analysis
-We ran causality tests for each of the climatic variables against the expected number of cases, as [shown here](CCM/CCM_tests.md). The significant ones were further analyzed to determine the signal and direction of the effect, as explained [here](CCM/multivariate.md).
+We ran causality tests for each of the climatic variables against the expected number of cases for a range of time lags, and the significant ones were further analyzed to determine the signal and direction of the effect. We briefly explain how to run this code [here](CCM/README.md).
 
