@@ -5,4 +5,4 @@ This folder contains the headers for the data. Original files contain data on nu
 * DataMalariaTartagalCCM.csv: monthly data
 * DatosSemanalesVivaxClimaCompletissima.csv: (epidemiological) weekly data
 
-Only the first lines are provided, to make the headers and data format clear. The full data can be obtained from the Argentinian Ministry of Health.
+Only the first lines are provided, to make the headers and data format clear. The full data can be obtained from the Argentina Ministry of Health.
