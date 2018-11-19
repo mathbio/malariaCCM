@@ -1,0 +1,281 @@
+---
+title: "A zero-inflated Poisson model for cases of Malaria in Tartagal"
+author: "Paulo Inácio Prado"
+date: "`r format(Sys.time(), '%d de %B de %Y')`"
+output: 
+        rmdformats::readthedown:
+        self_contained: true
+        thumbnails: true
+        lightbox: true
+        gallery: false
+        highlight: tango
+        toc_depth: 4
+---
+
+
+
+```{r setup, echo=FALSE, warning=FALSE, message=F}
+library(knitr); library(zoo); library(xts)
+library(ggplot2)#; library(cowplot)
+library(dplyr); library(tidyr); library(ggmap);
+library(rjags); library(R2jags)
+
+opts_chunk$set(fig.align = 'center', fig.show = 'hold', fig.height = 4,
+               warning = FALSE, message = FALSE, error = FALSE, echo=FALSE)
+options(formatR.arrow = TRUE,width = 90, cache=TRUE)
+```
+
+# Statistical model used
+
+The idea is to fit an inhomogeneous zero-inflated Poisson dynamics in discrete time.
+The expected size of the population of infected people is the single state variable,
+which has a growth that can change at each time step. The number of infected people at
+each time step follows a Poisson distribution where its single parameters is the expected number of cases.
+The number of recorded cases is a proportion of the number of infected people.
+
+This model thus describe the number of observed cases as a zero-inflated Poisson variable,
+that evolve in time (that is , inhomogeneous in time). Our purpose with this model is
+to provide a time series of expected number of cases with minimal assumptions. 
+By replacing the original time series of observed cases with this estimated time series can have two main
+advantages:
+
+- Zero values are eliminated, as they are replaced by the expected numbers (the estimated time-varying parameter of the Poisson).
+- Observation (including detection errors that can explain part of the zeroes) and part of prcess errors are sorted out.
+
+
+## Model specification:
+
+##### Number of infected people in the population: 
+
+   * E[N(t+1)] =  N(t) exp(r(t))
+   * N(t) ~ Poisson(lambda = E[N(t)])
+
+##### Number of cases detected :
+
+   * n(t) ~ Binomial(P(t), N(t))
+
+##### Where:
+
+* E[X] expected values
+* r(t) a time-varying rate of change
+* P is the proportion of detected cases
+
+
+## Model script
+
+The model is a discrete time dynamics, fitted by the a bayesian MCMC routine
+using the [JAGS](http://www.uvm.edu/~bbeckage/Teaching/DataAnalysis/Manuals/manual.jags.pdf), language with the R packages
+[rjags](https://cran.r-project.org/package=rjags) e [R2jags](https://cran.r-project.org/package=R2jags).
+
+The model script in Jags is [here](poisson_model.jag). 
+
+
+# Monthly data
+
+* Number of Malaria cases in Tartagal, Salta, from `r format(min((ncases$date)), "%m/%Y")` to 
+`r format(max((ncases$date)), "%m/%Y")`
+* Time series length: `r length(ncases$date)` months
+* Total number of cases: `r sum(ncases$cases)`
+
+
+
+```{r data reading}
+ncases <- read.csv("../data/DataMalariaTartagalCCM.csv")
+ncases$date <- as.Date(ncases$date, "%d/%m/%Y")
+#summary(ncases)
+ncasesz <- zoo(ncases[,-1], ncases[,1])
+plot(ncasesz$cases, ylab="Number of cases")
+```
+
+## Model settings
+
+```{r monthly load results}
+load("fit1.RData")
+tmp <- fit1$BUGSoutput$summary
+```
+
+The model was fitted in parallel with a separated R script, because it is time-consuming.
+
+* Number of chains: `r fit1$BUGSoutput$n.chains`
+* Number of iterations in each chain: `r fit1$BUGSoutput$n.iter`
+* Burn-in period (n iterations discarded): `r fit1$BUGSoutput$n.burnin`
+* Thinning period: `r fit1$BUGSoutput$n.thin`
+* Number of values of the posterior distribution kept in each interaction: `r fit1$BUGSoutput$n.keep`
+* Total number of values of posterior kept: `r fit1$BUGSoutput$n.sims`
+
+
+## Model Convergence
+
+Convergence ok: 
+
+* R-hat statistics of estimated posterior parameters ranged from `r round(min(fit1$BUGSoutput$summary[,"Rhat"]),4)` 
+to `r round(max(fit1$BUGSoutput$summary[,"Rhat"]),4)`
+* Effective size of samples of posterior distributions ranged from `r min(fit1$BUGSoutput$summary[,"n.eff"])` 
+to `r min(fit1$BUGSoutput$summary[,"n.eff"])`
+
+
+## Estimated detection probability
+
+The posterior mean detection probability is
+`r  round(tmp[grep("^p",rownames(tmp)),"mean"], 3)`.
+
+The plot of posterior density of the four chains pooled is above:
+
+```{r posterior p detection}
+plot(as.mcmc(fit1)[,"p"])
+```
+
+
+## Observed x predicted number of cases
+
+The plot shows the expected value of the number of cases recorded and
+its credible interval (blue) and the observed number of cases (red).
+
+```{r plots}
+## Predicted x observed number of cases
+totais <- zoo(
+    data.frame(obs=ncases$cases, 
+               Ncasos=tmp[grep("ypred",rownames(tmp)),"mean"],
+               Ncasos.low=tmp[grep("ypred",rownames(tmp)),"2.5%"],
+               Ncasos.up=tmp[grep("ypred",rownames(tmp)),"97.5%"]),
+    order.by=as.Date(ncases$date))
+## N de casos obs e previsto
+totais.df <- totais %>%
+    fortify() %>%
+    mutate(data=as.Date(Index))
+totais.df %>%
+    ggplot(aes(data, obs)) +
+    geom_line(colour="red", lwd=0.8) +
+    geom_line(aes(data, Ncasos), colour="blue")+
+    geom_ribbon(aes(ymin=Ncasos.low, ymax=Ncasos.up), fill="blue", alpha=0.25) +
+    scale_y_continuous(name="N cases") +
+    theme_bw()
+
+## Save the predicted data
+write.csv(totais.df, file="predicted_cases_poisson_model_monthly.csv", row.names=FALSE)
+```
+
+## Files
+
+* [R script](cluster_months.R) (ran in a separate machine in parallel)
+* [R binary file](fit1.RData) with the object of the fitted model (class rjags). 
+* [Fitted expected number of cases](predicted_cases_poisson_model_monthly.csv): time series of the mean of posterior distributions. Comma-delimited (csv)
+
+
+# Weekly data
+
+* Same dataset, but aggregated by epidemiological week.
+* Time series length: `r length(ncasesW$data)` weeks
+
+
+```{r Weekly data reading}
+ncasesW <- read.csv("../data/SemanalesTartagal/DatosSemanalesVivaxClimaCompletissima.csv", as.is=TRUE)
+ncasesW$data <- as.Date(ncasesW$data)
+ncasesWz <- zoo(ncasesW[,-1], ncasesW[,1])
+plot(ncasesWz$Vivax.cases, ylab="Number of cases")
+```
+
+
+## Model settings
+
+```{r weekly load results}
+load("fit2.RData")
+tmp2 <- fit2$BUGSoutput$summary
+```
+
+The model was fitted in parallel with a separated R script, because it is time-consuming.
+
+* Number of chains: `r fit2$BUGSoutput$n.chains`
+* Number of iterations in each chain: `r fit2$BUGSoutput$n.iter`
+* Burn-in period (n iterations discarded): `r fit2$BUGSoutput$n.burnin`
+* Thinning period: `r fit2$BUGSoutput$n.thin`
+* Number of values of the posterior distribution kept in each interaction: `r fit2$BUGSoutput$n.keep`
+* Total number of values of posterior kept: `r fit2$BUGSoutput$n.sims`
+
+
+## Model Convergence
+
+Convergence ok: 
+
+* R-hat statistics of estimated posterior parameters ranged from `r round(min(fit2$BUGSoutput$summary[,"Rhat"]),4)` 
+to `r round(max(fit2$BUGSoutput$summary[,"Rhat"]),4)`
+* Effective size of samples of posterior distributions ranged from `r min(fit2$BUGSoutput$summary[,"n.eff"])` 
+to `r min((fit2$BUGSoutput$summary[,"n.eff"]))`
+
+The posterior mean detection probability is
+`r  round(tmp[grep("^p",rownames(tmp)),"mean"], 3)`.
+
+## Estimated detection probability
+
+The posterior mean detection probability is very low:
+`r  round(tmp2[grep("^p",rownames(tmp2)),"mean"], 4)`.
+
+Because this detection is constant, I do not think it will affect
+the smoothing of predicted number of cases itself, only teh magnitude of the predicted values.
+So, I suppose that's ok to use in CCM, right?
+
+The plot of posterior density of the four chains pooled is below.
+
+```{r weekly posterior p detection}
+plot(as.mcmc(fit2)[,"p"])
+
+```
+
+
+## Observed x predicted number of cases
+
+The plot shows the expected value of the number of cases recorded and
+its credible interval (blue) and the observed number of cases (red).
+
+
+```{r Weekly plots}
+## Load the results of the Bayseian fit, that I ran in a cluster
+load("fit2.RData")
+## Predicted x observed number of cases
+tmp2 <- fit2$BUGSoutput$summary
+totaisW <- zoo(
+    data.frame(obs=ncasesW$Vivax.cases, 
+               Ncasos=tmp2[grep("ypred",rownames(tmp2)),"mean"],
+               Ncasos.low=tmp2[grep("ypred",rownames(tmp2)),"2.5%"],
+               Ncasos.up=tmp2[grep("ypred",rownames(tmp2)),"97.5%"],
+               NI=tmp2[grep("N",rownames(tmp2)),"mean"],
+               NI.low=tmp2[grep("N",rownames(tmp2)),"2.5%"],
+               NI.up=tmp2[grep("N",rownames(tmp2)),"97.5%"]),
+    order.by=as.Date(ncasesW$data))
+## N de casos obs e previsto
+totaisW.df <- totaisW %>%
+    fortify() %>%
+    mutate(data=as.Date(Index))
+totaisW.df %>%
+    ggplot(aes(data, obs)) +
+    geom_line(colour="red") +
+    geom_line(aes(data, Ncasos), colour="blue")+
+    geom_ribbon(aes(ymin=Ncasos.low, ymax=Ncasos.up), fill="blue", alpha=0.5) +
+    scale_y_continuous(name="N cases") +
+    theme_bw()
+
+## Total de doentes
+## totaisW.df %>%
+##     ggplot(aes(data, NI)) +
+##     geom_line() +
+##     geom_ribbon(aes(ymin=NI.low, ymax=NI.up),alpha=0.25) +
+##     scale_y_continuous(name="N Infected") +
+##     theme_bw()
+
+## Simulated number of cases
+## A sample of size = 500 from posterior
+r.ind <- sample(nrow(fit2$BUGSoutput$sims.list$N))
+results
+for(i in 1:length(r.ind)){
+    
+    }
+## Save the predicted data
+write.csv(totaisW.df, file="predicted_cases_poisson_model_weekly.csv", row.names=FALSE)
+```
+
+## Files
+
+* [R script](cluster.R) (ran in a separate machine in parallel)
+* [R binary file](fit2.RData) with the object of the fitted model (class rjags). 
+* [Fitted expected number of cases](predicted_cases_poisson_model_weekly.csv): time series of the mean of posterior distributions. Comma-delimited (csv)
+

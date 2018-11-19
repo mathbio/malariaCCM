@@ -1,0 +1,20 @@
+model {
+lambda ~ dunif(0, 5)
+#p ~ dunif(0,1)
+lp ~ dnorm(2.2, 1)
+logit(p) <- lp
+for(t in 1:(nIntervals-1)) {
+   r[t] ~ dnorm(0, 5)
+}
+N[1] ~ dpois(lambda)
+y[1] ~ dbin(p, N[1])
+  for(t in 2:nIntervals) {
+      mu[t-1]   <- exp(r[t-1]) * N[t-1]
+      N[t] ~ dpois(mu[t-1])
+      y[t] ~ dbin(p, N[t])	  
+   }
+  for(t in 1:nIntervals){
+     ypred[t] <- sum( N[t]*p )
+     }
+}
+
